@@ -172,6 +172,52 @@ active_label = "index"
 # when displaying workspaces, choose whether to draw the layout preview or a set of labels
 # options are "layout" or "label"
 display_style = "layout"
+# optional menu bar-only workspace display order override
+# accepts indexes (0-based) and/or workspace names
+workspace_order = []
+
+# Workspace activity indicator styles for matching rules below.
+# Idle keeps legacy behavior; running/waiting_input override fill/border/window emphasis.
+[settings.ui.menu_bar.activity_styles.idle]
+fill_alpha = 0.0
+border_alpha = 1.0
+border_width = 1.0
+window_alpha = 1.0
+
+[settings.ui.menu_bar.activity_styles.running]
+fill_alpha = 0.45
+border_alpha = 1.0
+border_width = 1.5
+window_alpha = 1.0
+
+[settings.ui.menu_bar.activity_styles.waiting_input]
+fill_alpha = 1.0
+border_alpha = 1.0
+border_width = 2.0
+window_alpha = 1.0
+
+# Workspace activity rules (highest `priority` wins).
+# Matchers are optional and combined with AND semantics.
+# Supported matchers:
+# - workspace: index (0-based) or workspace name
+# - app_id: bundle id
+# - app_name: application name substring (case-insensitive)
+# - title_regex: window-title regex (case-insensitive)
+# - title_substring: window-title substring (case-insensitive)
+#
+# Example for Ghostty + Claude Code style workflows:
+# [[settings.ui.menu_bar.activity_rules]]
+# state = "running"
+# app_id = "com.mitchellh.ghostty"
+# title_substring = "claude"
+# priority = 10
+#
+# [[settings.ui.menu_bar.activity_rules]]
+# state = "waiting_input"
+# app_id = "com.mitchellh.ghostty"
+# title_regex = "(?i)waiting\\s+for\\s+input"
+# priority = 50
+settings.ui.menu_bar.activity_rules = []
 
 [settings.ui.stack_line]
 # experimental stack line indicator (defaults to off)

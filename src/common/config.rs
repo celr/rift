@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use anyhow::bail;
+use regex::RegexBuilder;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -471,6 +472,74 @@ pub enum WorkspaceDisplayStyle {
     Label,
 }
 
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Copy, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum MenuBarWorkspaceActivityState {
+    #[default]
+    Idle,
+    Running,
+    WaitingInput,
+}
+
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct MenuBarWorkspaceActivityStyle {
+    #[serde(default = "default_menu_bar_fill_alpha")]
+    pub fill_alpha: f64,
+    #[serde(default = "default_menu_bar_border_alpha")]
+    pub border_alpha: f64,
+    #[serde(default = "default_menu_bar_border_width")]
+    pub border_width: f64,
+    #[serde(default = "default_menu_bar_window_alpha")]
+    pub window_alpha: f64,
+}
+
+impl Default for MenuBarWorkspaceActivityStyle {
+    fn default() -> Self {
+        Self {
+            fill_alpha: default_menu_bar_fill_alpha(),
+            border_alpha: default_menu_bar_border_alpha(),
+            border_width: default_menu_bar_border_width(),
+            window_alpha: default_menu_bar_window_alpha(),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct MenuBarWorkspaceActivityStyles {
+    #[serde(default = "default_menu_bar_idle_style")]
+    pub idle: MenuBarWorkspaceActivityStyle,
+    #[serde(default = "default_menu_bar_running_style")]
+    pub running: MenuBarWorkspaceActivityStyle,
+    #[serde(default = "default_menu_bar_waiting_input_style")]
+    pub waiting_input: MenuBarWorkspaceActivityStyle,
+}
+
+impl Default for MenuBarWorkspaceActivityStyles {
+    fn default() -> Self {
+        Self {
+            idle: default_menu_bar_idle_style(),
+            running: default_menu_bar_running_style(),
+            waiting_input: default_menu_bar_waiting_input_style(),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct MenuBarWorkspaceActivityRule {
+    pub state: MenuBarWorkspaceActivityState,
+    #[serde(default)]
+    pub workspace: Option<WorkspaceSelector>,
+    pub app_id: Option<String>,
+    pub app_name: Option<String>,
+    pub title_regex: Option<String>,
+    pub title_substring: Option<String>,
+    #[serde(default)]
+    pub priority: i32,
+}
+
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Default)]
 #[serde(deny_unknown_fields)]
 pub struct MenuBarSettings {
@@ -484,6 +553,15 @@ pub struct MenuBarSettings {
     pub active_label: ActiveWorkspaceLabel,
     #[serde(default)]
     pub display_style: WorkspaceDisplayStyle,
+    /// Optional menu bar display order override.
+    /// Accepts workspace indexes (0-based) and/or workspace names.
+    /// Unknown selectors are ignored.
+    #[serde(default)]
+    pub workspace_order: Vec<WorkspaceSelector>,
+    #[serde(default)]
+    pub activity_styles: MenuBarWorkspaceActivityStyles,
+    #[serde(default)]
+    pub activity_rules: Vec<MenuBarWorkspaceActivityRule>,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Default)]
@@ -518,6 +596,41 @@ fn default_mission_control_fade_duration_ms() -> f64 { 180.0 }
 
 fn default_drag_swap_fraction() -> f64 { 0.3 }
 
+fn default_menu_bar_fill_alpha() -> f64 { 0.0 }
+
+fn default_menu_bar_border_alpha() -> f64 { 1.0 }
+
+fn default_menu_bar_border_width() -> f64 { 1.0 }
+
+fn default_menu_bar_window_alpha() -> f64 { 1.0 }
+
+fn default_menu_bar_idle_style() -> MenuBarWorkspaceActivityStyle {
+    MenuBarWorkspaceActivityStyle {
+        fill_alpha: 0.0,
+        border_alpha: 1.0,
+        border_width: 1.0,
+        window_alpha: 1.0,
+    }
+}
+
+fn default_menu_bar_running_style() -> MenuBarWorkspaceActivityStyle {
+    MenuBarWorkspaceActivityStyle {
+        fill_alpha: 0.45,
+        border_alpha: 1.0,
+        border_width: 1.5,
+        window_alpha: 1.0,
+    }
+}
+
+fn default_menu_bar_waiting_input_style() -> MenuBarWorkspaceActivityStyle {
+    MenuBarWorkspaceActivityStyle {
+        fill_alpha: 1.0,
+        border_alpha: 1.0,
+        border_width: 2.0,
+        window_alpha: 1.0,
+    }
+}
+
 fn default_master_stack_ratio() -> f64 { 0.6 }
 
 fn default_master_stack_count() -> usize { 1 }
@@ -542,6 +655,89 @@ pub enum VerticalPlacement {
     #[default]
     Left,
     Right,
+}
+
+impl MenuBarSettings {
+    pub fn validate(&self) -> Vec<String> {
+        let mut issues = Vec::new();
+
+        validate_menu_bar_style("activity_styles.idle", &self.activity_styles.idle, &mut issues);
+        validate_menu_bar_style(
+            "activity_styles.running",
+            &self.activity_styles.running,
+            &mut issues,
+        );
+        validate_menu_bar_style(
+            "activity_styles.waiting_input",
+            &self.activity_styles.waiting_input,
+            &mut issues,
+        );
+
+        for (idx, rule) in self.activity_rules.iter().enumerate() {
+            if rule.workspace.is_none()
+                && rule.app_id.as_ref().map_or(true, |v| v.is_empty())
+                && rule.app_name.as_ref().map_or(true, |v| v.is_empty())
+                && rule.title_regex.as_ref().map_or(true, |v| v.is_empty())
+                && rule.title_substring.as_ref().map_or(true, |v| v.is_empty())
+            {
+                issues.push(format!(
+                    "activity_rules[{idx}] must include at least one matcher (workspace, app_id, app_name, title_regex, title_substring)"
+                ));
+            }
+
+            if let Some(title_regex) = rule.title_regex.as_deref() {
+                if title_regex.is_empty() {
+                    issues.push(format!("activity_rules[{idx}].title_regex cannot be empty"));
+                } else if let Err(err) = RegexBuilder::new(title_regex)
+                    .case_insensitive(true)
+                    .build()
+                {
+                    issues.push(format!(
+                        "activity_rules[{idx}].title_regex invalid regex '{title_regex}': {err}"
+                    ));
+                }
+            }
+
+            if let Some(title_substring) = rule.title_substring.as_deref()
+                && title_substring.is_empty()
+            {
+                issues.push(format!("activity_rules[{idx}].title_substring cannot be empty"));
+            }
+        }
+
+        issues
+    }
+}
+
+fn validate_menu_bar_style(
+    prefix: &str,
+    style: &MenuBarWorkspaceActivityStyle,
+    issues: &mut Vec<String>,
+) {
+    if !(0.0..=1.0).contains(&style.fill_alpha) {
+        issues.push(format!(
+            "{prefix}.fill_alpha must be between 0.0 and 1.0, got {}",
+            style.fill_alpha
+        ));
+    }
+    if !(0.0..=1.0).contains(&style.border_alpha) {
+        issues.push(format!(
+            "{prefix}.border_alpha must be between 0.0 and 1.0, got {}",
+            style.border_alpha
+        ));
+    }
+    if style.border_width < 0.0 {
+        issues.push(format!(
+            "{prefix}.border_width must be non-negative, got {}",
+            style.border_width
+        ));
+    }
+    if !(0.0..=1.0).contains(&style.window_alpha) {
+        issues.push(format!(
+            "{prefix}.window_alpha must be between 0.0 and 1.0, got {}",
+            style.window_alpha
+        ));
+    }
 }
 
 impl StackLineSettings {
@@ -855,6 +1051,10 @@ impl Settings {
         }
 
         issues.extend(self.layout.validate());
+
+        for issue in self.ui.menu_bar.validate() {
+            issues.push(format!("ui.menu_bar {issue}"));
+        }
 
         if self.gestures.swipe_vertical_tolerance < 0.0 {
             issues.push(format!(
@@ -1478,5 +1678,43 @@ mod tests {
         assert!(suggestion.is_some());
         let (s, _maybe_dep) = suggestion.unwrap();
         assert_eq!(s, "toggle_stack");
+    }
+
+    #[test]
+    fn menu_bar_activity_rule_rejects_invalid_title_regex() {
+        let settings = MenuBarSettings {
+            activity_rules: vec![MenuBarWorkspaceActivityRule {
+                state: MenuBarWorkspaceActivityState::Running,
+                workspace: None,
+                app_id: None,
+                app_name: None,
+                title_regex: Some("(".to_string()),
+                title_substring: None,
+                priority: 0,
+            }],
+            ..Default::default()
+        };
+
+        let issues = settings.validate();
+        assert!(issues.iter().any(|issue| issue.contains("invalid regex")));
+    }
+
+    #[test]
+    fn menu_bar_activity_rule_requires_at_least_one_matcher() {
+        let settings = MenuBarSettings {
+            activity_rules: vec![MenuBarWorkspaceActivityRule {
+                state: MenuBarWorkspaceActivityState::Running,
+                workspace: None,
+                app_id: None,
+                app_name: None,
+                title_regex: None,
+                title_substring: None,
+                priority: 0,
+            }],
+            ..Default::default()
+        };
+
+        let issues = settings.validate();
+        assert!(issues.iter().any(|issue| issue.contains("at least one matcher")));
     }
 }

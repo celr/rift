@@ -344,11 +344,17 @@ fn workspace_sig(ws: &WorkspaceData) -> u64 {
 
 #[inline(always)]
 fn window_sig(w: &WindowData) -> u64 {
+    let app_name = w.app_name.as_deref().map(hash_str).unwrap_or(0);
+    let bundle_id = w.info.bundle_id.as_deref().map(hash_str).unwrap_or(0);
+
     (w.id.idx.get() as u64)
         ^ w.info.frame.origin.x.to_bits().rotate_left(11)
         ^ w.info.frame.origin.y.to_bits().rotate_left(23)
         ^ w.info.frame.size.width.to_bits().rotate_left(37)
         ^ w.info.frame.size.height.to_bits().rotate_left(51)
+        ^ hash_str(&w.info.title).rotate_left(7)
+        ^ app_name.rotate_left(17)
+        ^ bundle_id.rotate_left(29)
 }
 
 #[inline(always)]
@@ -364,7 +370,10 @@ fn hash_str(s: &str) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::sig;
-    use crate::model::server::WorkspaceData;
+    use crate::actor::app::WindowId;
+    use crate::model::server::{WindowData, WorkspaceData};
+    use crate::sys::app::WindowInfo;
+    use objc2_core_foundation::{CGPoint, CGRect, CGSize};
 
     fn workspace(layout_mode: &str) -> WorkspaceData {
         WorkspaceData {
@@ -378,6 +387,30 @@ mod tests {
         }
     }
 
+    fn window_with_title(title: &str) -> WindowData {
+        WindowData {
+            id: WindowId::new(99, 1),
+            is_floating: false,
+            is_focused: false,
+            app_name: Some("Ghostty".to_string()),
+            info: WindowInfo {
+                is_standard: true,
+                is_root: true,
+                is_minimized: false,
+                is_resizable: true,
+                min_size: None,
+                max_size: None,
+                title: title.to_string(),
+                frame: CGRect::new(CGPoint::new(0.0, 0.0), CGSize::new(100.0, 100.0)),
+                sys_id: None,
+                bundle_id: Some("com.mitchellh.ghostty".to_string()),
+                path: None,
+                ax_role: None,
+                ax_subrole: None,
+            },
+        }
+    }
+
     #[test]
     fn signature_changes_when_workspace_layout_mode_changes() {
         let base = vec![workspace("bsp")];
@@ -385,6 +418,18 @@ mod tests {
 
         let before = sig(1, true, Some(0), &base, &[]);
         let after = sig(1, true, Some(0), &changed, &[]);
+
+        assert_ne!(before, after);
+    }
+
+    #[test]
+    fn signature_changes_when_window_title_changes() {
+        let workspaces = vec![workspace("bsp")];
+        let before_windows = vec![window_with_title("Claude Code")];
+        let after_windows = vec![window_with_title("Claude Code - waiting for input")];
+
+        let before = sig(1, true, Some(0), &workspaces, &before_windows);
+        let after = sig(1, true, Some(0), &workspaces, &after_windows);
 
         assert_ne!(before, after);
     }
