@@ -484,6 +484,11 @@ pub struct MenuBarSettings {
     pub active_label: ActiveWorkspaceLabel,
     #[serde(default)]
     pub display_style: WorkspaceDisplayStyle,
+    /// Optional menu bar display order override.
+    /// Accepts workspace indexes (0-based) and/or workspace names.
+    /// Unknown selectors are ignored.
+    #[serde(default)]
+    pub workspace_order: Vec<WorkspaceSelector>,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Default)]

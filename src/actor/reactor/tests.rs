@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use objc2_core_foundation::{CGPoint, CGSize};
 use test_log::test;
 
@@ -830,5 +832,91 @@ fn topology_relayout_pending_when_space_ids_change_for_same_displays() {
     assert!(
         reactor.pending_space_change_manager.topology_relayout_pending,
         "Space-id churn on unchanged displays should trigger topology relayout"
+    );
+}
+
+#[test]
+fn deferred_activation_switch_allows_new_window_to_stay_on_current_workspace() {
+    let mut apps = Apps::new();
+    let mut reactor = Reactor::new_for_test(LayoutEngine::new(
+        &crate::common::config::VirtualWorkspaceSettings::default(),
+        &crate::common::config::LayoutSettings::default(),
+        None,
+    ));
+
+    let space = SpaceId::new(1);
+    let full_screen = CGRect::new(CGPoint::new(0., 0.), CGSize::new(1000., 1000.));
+    reactor.handle_event(screen_params_event(vec![full_screen], vec![Some(space)], vec![]));
+
+    reactor.handle_events(apps.make_app_with_opts(
+        1,
+        vec![make_window(1)],
+        Some(WindowId::new(1, 1)),
+        true,
+        true,
+    ));
+    apps.simulate_until_quiet(&mut reactor);
+
+    let workspace_ids = reactor
+        .layout_manager
+        .layout_engine
+        .virtual_workspace_manager_mut()
+        .list_workspaces(space)
+        .into_iter()
+        .map(|(id, _)| id)
+        .collect::<Vec<_>>();
+    assert!(workspace_ids.len() >= 2, "test requires at least two workspaces");
+
+    let ws0 = workspace_ids[0];
+    let ws1 = workspace_ids[1];
+
+    assert_eq!(reactor.layout_manager.layout_engine.active_workspace(space), Some(ws0));
+
+    reactor.handle_event(Event::Command(Command::Layout(LayoutCommand::SwitchToWorkspace(
+        1,
+    ))));
+    apps.simulate_until_quiet(&mut reactor);
+    assert_eq!(reactor.layout_manager.layout_engine.active_workspace(space), Some(ws1));
+
+    let (events_tx, mut events_rx) = actor::channel();
+    reactor.communication_manager.events_tx = Some(events_tx);
+
+    reactor.handle_event(Event::ApplicationActivated(1, Quiet::No));
+    reactor.handle_event(Event::WindowCreated(
+        WindowId::new(1, 2),
+        make_window(2),
+        None,
+        Some(MouseState::Up),
+    ));
+
+    std::thread::sleep(Duration::from_millis(250));
+    let deferred = events_rx
+        .try_recv()
+        .expect("expected a deferred activation event after debounce")
+        .1;
+    assert!(matches!(
+        deferred,
+        Event::ApplicationActivatedDeferred {
+            pid: 1,
+            generation: _
+        }
+    ));
+    reactor.handle_event(deferred);
+
+    assert_eq!(
+        reactor.layout_manager.layout_engine.active_workspace(space),
+        Some(ws1),
+        "deferred activation should not pull focus back to the old app workspace"
+    );
+
+    let assigned_workspace = reactor
+        .layout_manager
+        .layout_engine
+        .virtual_workspace_manager()
+        .workspace_for_window(space, WindowId::new(1, 2));
+    assert_eq!(
+        assigned_workspace,
+        Some(ws1),
+        "new window should remain assigned to the current workspace"
     );
 }
