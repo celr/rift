@@ -1,6 +1,6 @@
 // many ideas for how this works were taken from https://github.com/xiamaz/YabaiIndicator
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, ProtocolObject};
@@ -109,7 +109,9 @@ impl MenuIcon {
         settings: &MenuBarSettings,
         hotkeys: &[(Hotkey, WmCommand)],
     ) {
-        let active_layout = workspaces
+        let ordered_workspaces =
+            order_workspaces_for_menu_bar(workspaces, &settings.workspace_order);
+        let active_layout = ordered_workspaces
             .iter()
             .find(|w| w.is_active)
             .and_then(|w| parse_layout_mode(&w.layout_mode));
@@ -120,7 +122,7 @@ impl MenuIcon {
             active_layout,
             active_space,
             active_space_is_activated,
-            workspaces,
+            &ordered_workspaces,
             &shortcuts,
         );
         self.status_item.setMenu(Some(&menu));
@@ -142,9 +144,9 @@ impl MenuIcon {
         let render_inputs = match (mode, style) {
             (MenuBarDisplayMode::All, WorkspaceDisplayStyle::Layout) => {
                 let filtered = if settings.show_empty {
-                    workspaces.to_vec()
+                    ordered_workspaces.clone()
                 } else {
-                    workspaces
+                    ordered_workspaces
                         .iter()
                         .cloned()
                         .filter(|w| w.window_count > 0 || w.is_active)
@@ -159,7 +161,7 @@ impl MenuIcon {
                     })
                     .collect()
             }
-            (MenuBarDisplayMode::All, WorkspaceDisplayStyle::Label) => workspaces
+            (MenuBarDisplayMode::All, WorkspaceDisplayStyle::Label) => ordered_workspaces
                 .iter()
                 .cloned()
                 .filter(|w| settings.show_empty || w.window_count > 0 || w.is_active)
@@ -174,7 +176,7 @@ impl MenuIcon {
                     }
                 })
                 .collect(),
-            (MenuBarDisplayMode::Active, WorkspaceDisplayStyle::Layout) => workspaces
+            (MenuBarDisplayMode::Active, WorkspaceDisplayStyle::Layout) => ordered_workspaces
                 .iter()
                 .cloned()
                 .find(|w| w.is_active)
@@ -186,7 +188,7 @@ impl MenuIcon {
                     }]
                 })
                 .unwrap_or_default(),
-            (MenuBarDisplayMode::Active, WorkspaceDisplayStyle::Label) => workspaces
+            (MenuBarDisplayMode::Active, WorkspaceDisplayStyle::Label) => ordered_workspaces
                 .iter()
                 .cloned()
                 .find(|w| w.is_active)
@@ -300,6 +302,39 @@ fn parse_layout_mode(layout_mode: &str) -> Option<LayoutMode> {
         "scrolling" => Some(LayoutMode::Scrolling),
         _ => None,
     }
+}
+
+fn order_workspaces_for_menu_bar(
+    workspaces: &[WorkspaceData],
+    workspace_order: &[WorkspaceSelector],
+) -> Vec<WorkspaceData> {
+    if workspace_order.is_empty() {
+        return workspaces.to_vec();
+    }
+
+    let mut ordered = Vec::with_capacity(workspaces.len());
+    let mut seen_indexes = HashSet::with_capacity(workspaces.len());
+
+    for selector in workspace_order {
+        let matched = match selector {
+            WorkspaceSelector::Index(index) => workspaces.iter().find(|ws| ws.index == *index),
+            WorkspaceSelector::Name(name) => workspaces.iter().find(|ws| ws.name == *name),
+        };
+
+        if let Some(workspace) = matched {
+            if seen_indexes.insert(workspace.index) {
+                ordered.push(workspace.clone());
+            }
+        }
+    }
+
+    for workspace in workspaces {
+        if seen_indexes.insert(workspace.index) {
+            ordered.push(workspace.clone());
+        }
+    }
+
+    ordered
 }
 
 fn layout_title(mode: LayoutMode) -> &'static str {
@@ -1048,3 +1083,62 @@ define_class!(
         }
     }
 );
+
+#[cfg(test)]
+mod tests {
+    use super::order_workspaces_for_menu_bar;
+    use crate::common::config::WorkspaceSelector;
+    use crate::model::server::WorkspaceData;
+
+    fn workspace(index: usize, name: &str) -> WorkspaceData {
+        WorkspaceData {
+            id: format!("ws-{index}"),
+            index,
+            name: name.to_string(),
+            layout_mode: "traditional".to_string(),
+            is_active: false,
+            window_count: 0,
+            windows: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn workspace_order_applies_selected_first_then_remaining_in_natural_order() {
+        let workspaces = vec![
+            workspace(0, "Main"),
+            workspace(1, "Dev"),
+            workspace(2, "Chat"),
+            workspace(3, "Misc"),
+        ];
+
+        let ordered = order_workspaces_for_menu_bar(
+            &workspaces,
+            &[
+                WorkspaceSelector::Name("Chat".to_string()),
+                WorkspaceSelector::Index(0),
+            ],
+        );
+
+        let indices = ordered.iter().map(|ws| ws.index).collect::<Vec<_>>();
+        assert_eq!(indices, vec![2, 0, 1, 3]);
+    }
+
+    #[test]
+    fn workspace_order_ignores_unknowns_and_deduplicates() {
+        let workspaces = vec![workspace(0, "Main"), workspace(1, "Dev"), workspace(2, "Chat")];
+
+        let ordered = order_workspaces_for_menu_bar(
+            &workspaces,
+            &[
+                WorkspaceSelector::Name("Nope".to_string()),
+                WorkspaceSelector::Index(1),
+                WorkspaceSelector::Name("Dev".to_string()),
+                WorkspaceSelector::Index(42),
+                WorkspaceSelector::Index(1),
+            ],
+        );
+
+        let indices = ordered.iter().map(|ws| ws.index).collect::<Vec<_>>();
+        assert_eq!(indices, vec![1, 0, 2]);
+    }
+}
