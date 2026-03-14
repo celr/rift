@@ -60,7 +60,7 @@ impl AppEventHandler {
             return;
         }
 
-        reactor.handle_app_activation_workspace_switch(pid);
+        reactor.schedule_app_activation_workspace_switch(pid);
     }
 
     pub fn handle_windows_discovered(
