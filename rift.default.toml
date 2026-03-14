@@ -172,14 +172,14 @@ active_label = "index"
 # when displaying workspaces, choose whether to draw the layout preview or a set of labels
 # options are "layout" or "label"
 display_style = "layout"
-# optional menu bar-only workspace display order override
-# accepts indexes (0-based) and/or workspace names, in preferred display order
+# optional menu bar display order override
+# accepts workspace indexes (0-based) and/or workspace names
 # unknown entries are ignored, duplicates are skipped, and unspecified workspaces are appended
 # in natural order so engine behavior (next/prev, mission control, etc.) is unchanged
 # examples:
-# workspace_order = [2, 0, "Communication"]
-# workspace_order = ["Development", "Main"]
-workspace_order = []
+# order = [2, 0, "chat"]
+# order = ["coding", "main"]
+order = []
 
 [settings.ui.stack_line]
 # experimental stack line indicator (defaults to off)

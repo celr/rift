@@ -487,8 +487,8 @@ pub struct MenuBarSettings {
     /// Optional menu bar display order override.
     /// Accepts workspace indexes (0-based) and/or workspace names.
     /// Unknown selectors are ignored.
-    #[serde(default)]
-    pub workspace_order: Vec<WorkspaceSelector>,
+    #[serde(default, alias = "workspace_order")]
+    pub order: Vec<WorkspaceSelector>,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Default)]
