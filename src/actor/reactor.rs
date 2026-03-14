@@ -143,6 +143,7 @@ pub enum Event {
     ApplicationTerminated(pid_t),
     ApplicationThreadTerminated(pid_t),
     ApplicationActivated(pid_t, Quiet),
+    ApplicationActivatedDeferred { pid: pid_t, generation: u64 },
     ApplicationDeactivated(pid_t),
     ApplicationGloballyActivated(pid_t),
     ApplicationGloballyDeactivated(pid_t),
