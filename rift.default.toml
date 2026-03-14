@@ -217,7 +217,6 @@ window_alpha = 1.0
 # app_id = "com.mitchellh.ghostty"
 # title_regex = "(?i)waiting\\s+for\\s+input"
 # priority = 50
-settings.ui.menu_bar.activity_rules = []
 
 [settings.ui.stack_line]
 # experimental stack line indicator (defaults to off)
