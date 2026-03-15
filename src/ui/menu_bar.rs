@@ -143,7 +143,7 @@ impl MenuIcon {
         let render_inputs = match (mode, style) {
             (MenuBarDisplayMode::All, WorkspaceDisplayStyle::Layout) => {
                 let filtered = if settings.show_empty {
-                    ordered_workspaces.clone()
+                    ordered_workspaces.to_vec()
                 } else {
                     ordered_workspaces
                         .iter()
