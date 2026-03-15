@@ -1,4 +1,5 @@
 // many ideas for how this works were taken from https://github.com/xiamaz/YabaiIndicator
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
@@ -141,35 +142,47 @@ impl MenuIcon {
         };
 
         let render_inputs = match (mode, style) {
-            (MenuBarDisplayMode::All, WorkspaceDisplayStyle::Layout) => ordered_workspaces
-                .iter()
-                .filter(|ws| settings.show_empty || ws.window_count > 0 || ws.is_active)
-                .map(|ws| WorkspaceRenderInput {
-                    workspace: (*ws).clone(),
-                    label: String::new(),
-                    show_windows: true,
-                })
-                .collect(),
+            (MenuBarDisplayMode::All, WorkspaceDisplayStyle::Layout) => {
+                let filtered = if settings.show_empty {
+                    ordered_workspaces.to_vec()
+                } else {
+                    ordered_workspaces
+                        .iter()
+                        .cloned()
+                        .filter(|w| w.window_count > 0 || w.is_active)
+                        .collect::<Vec<_>>()
+                };
+                filtered
+                    .into_iter()
+                    .map(|ws| WorkspaceRenderInput {
+                        workspace: ws,
+                        label: String::new(),
+                        show_windows: true,
+                    })
+                    .collect()
+            }
             (MenuBarDisplayMode::All, WorkspaceDisplayStyle::Label) => ordered_workspaces
                 .iter()
-                .filter(|ws| settings.show_empty || ws.window_count > 0 || ws.is_active)
+                .cloned()
+                .filter(|w| settings.show_empty || w.window_count > 0 || w.is_active)
                 .map(|ws| {
-                    let mut workspace = (*ws).clone();
-                    workspace.windows.clear();
-                    workspace.window_count = 0;
+                    let mut clone = ws.clone();
+                    clone.windows.clear();
+                    clone.window_count = 0;
                     WorkspaceRenderInput {
-                        workspace,
-                        label: label_for(ws),
+                        workspace: clone,
+                        label: label_for(&ws),
                         show_windows: false,
                     }
                 })
                 .collect(),
             (MenuBarDisplayMode::Active, WorkspaceDisplayStyle::Layout) => ordered_workspaces
                 .iter()
-                .find(|ws| ws.is_active)
+                .cloned()
+                .find(|w| w.is_active)
                 .map(|ws| {
                     vec![WorkspaceRenderInput {
-                        workspace: (*ws).clone(),
+                        workspace: ws,
                         label: String::new(),
                         show_windows: true,
                     }]
@@ -177,14 +190,15 @@ impl MenuIcon {
                 .unwrap_or_default(),
             (MenuBarDisplayMode::Active, WorkspaceDisplayStyle::Label) => ordered_workspaces
                 .iter()
-                .find(|ws| ws.is_active)
+                .cloned()
+                .find(|w| w.is_active)
                 .map(|ws| {
-                    let mut workspace = (*ws).clone();
-                    workspace.windows.clear();
-                    workspace.window_count = 0;
+                    let mut clone = ws.clone();
+                    clone.windows.clear();
+                    clone.window_count = 0;
                     vec![WorkspaceRenderInput {
-                        workspace,
-                        label: label_for(ws),
+                        workspace: clone,
+                        label: label_for(&ws),
                         show_windows: false,
                     }]
                 })
@@ -293,14 +307,12 @@ fn parse_layout_mode(layout_mode: &str) -> Option<LayoutMode> {
 fn order_workspaces_for_menu_bar<'a>(
     workspaces: &'a [WorkspaceData],
     workspace_selectors: &[WorkspaceSelector],
-) -> Vec<&'a WorkspaceData> {
-    let mut ordered = Vec::with_capacity(workspaces.len());
-
+) -> Cow<'a, [WorkspaceData]> {
     if workspace_selectors.is_empty() {
-        ordered.extend(workspaces.iter());
-        return ordered;
+        return Cow::Borrowed(workspaces);
     }
 
+    let mut ordered = Vec::with_capacity(workspaces.len());
     let mut seen_indices = HashSet::with_capacity(workspaces.len());
 
     for selector in workspace_selectors {
@@ -311,7 +323,7 @@ fn order_workspaces_for_menu_bar<'a>(
 
         if let Some(workspace) = matched {
             if seen_indices.insert(workspace.index) {
-                ordered.push(workspace);
+                ordered.push(workspace.clone());
             }
         } else {
             warn!(
@@ -323,11 +335,11 @@ fn order_workspaces_for_menu_bar<'a>(
 
     for workspace in workspaces {
         if seen_indices.insert(workspace.index) {
-            ordered.push(workspace);
+            ordered.push(workspace.clone());
         }
     }
 
-    ordered
+    Cow::Owned(ordered)
 }
 
 fn layout_title(mode: LayoutMode) -> &'static str {
@@ -390,7 +402,7 @@ fn build_status_menu(
     active_layout: Option<LayoutMode>,
     _active_space: SpaceId,
     active_space_is_activated: bool,
-    workspaces: &[&WorkspaceData],
+    workspaces: &[WorkspaceData],
     shortcuts: &MenuShortcuts,
 ) -> Retained<NSMenu> {
     let title = NSString::from_str("Rift");
@@ -454,8 +466,7 @@ fn build_status_menu(
     ));
     add_separator(&ws_submenu);
 
-    for workspace in workspaces {
-        let ws = *workspace;
+    for ws in workspaces {
         let ws_label = if ws.name.is_empty() {
             format!("Workspace {}", ws.index + 1)
         } else {
