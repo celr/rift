@@ -127,7 +127,82 @@ impl MenuIcon {
         self.status_item.setMenu(Some(&menu));
         self.menu = menu;
 
-        let render_inputs = build_workspace_render_inputs(&ordered_workspaces, settings);
+        let mode = settings.mode;
+        let style = settings.display_style;
+        let label_for = |workspace: &WorkspaceData| match settings.active_label {
+            ActiveWorkspaceLabel::Index => format!("{}", workspace.index + 1),
+            ActiveWorkspaceLabel::Name => {
+                if workspace.name.is_empty() {
+                    format!("{}", workspace.index + 1)
+                } else {
+                    workspace.name.clone()
+                }
+            }
+        };
+
+        let render_inputs = match (mode, style) {
+            (MenuBarDisplayMode::All, WorkspaceDisplayStyle::Layout) => {
+                let filtered = if settings.show_empty {
+                    ordered_workspaces.clone()
+                } else {
+                    ordered_workspaces
+                        .iter()
+                        .cloned()
+                        .filter(|w| w.window_count > 0 || w.is_active)
+                        .collect::<Vec<_>>()
+                };
+                filtered
+                    .into_iter()
+                    .map(|ws| WorkspaceRenderInput {
+                        workspace: ws,
+                        label: String::new(),
+                        show_windows: true,
+                    })
+                    .collect()
+            }
+            (MenuBarDisplayMode::All, WorkspaceDisplayStyle::Label) => ordered_workspaces
+                .iter()
+                .cloned()
+                .filter(|w| settings.show_empty || w.window_count > 0 || w.is_active)
+                .map(|ws| {
+                    let mut clone = ws.clone();
+                    clone.windows.clear();
+                    clone.window_count = 0;
+                    WorkspaceRenderInput {
+                        workspace: clone,
+                        label: label_for(&ws),
+                        show_windows: false,
+                    }
+                })
+                .collect(),
+            (MenuBarDisplayMode::Active, WorkspaceDisplayStyle::Layout) => ordered_workspaces
+                .iter()
+                .cloned()
+                .find(|w| w.is_active)
+                .map(|ws| {
+                    vec![WorkspaceRenderInput {
+                        workspace: ws,
+                        label: String::new(),
+                        show_windows: true,
+                    }]
+                })
+                .unwrap_or_default(),
+            (MenuBarDisplayMode::Active, WorkspaceDisplayStyle::Label) => ordered_workspaces
+                .iter()
+                .cloned()
+                .find(|w| w.is_active)
+                .map(|ws| {
+                    let mut clone = ws.clone();
+                    clone.windows.clear();
+                    clone.window_count = 0;
+                    vec![WorkspaceRenderInput {
+                        workspace: clone,
+                        label: label_for(&ws),
+                        show_windows: false,
+                    }]
+                })
+                .unwrap_or_default(),
+        };
 
         if render_inputs.is_empty() {
             self.status_item.setVisible(false);
@@ -259,86 +334,6 @@ fn order_workspaces_for_menu_bar(
     }
 
     ordered
-}
-
-fn build_workspace_render_inputs(
-    workspaces: &[WorkspaceData],
-    settings: &MenuBarSettings,
-) -> Vec<WorkspaceRenderInput> {
-    let label_for = |workspace: &WorkspaceData| match settings.active_label {
-        ActiveWorkspaceLabel::Index => format!("{}", workspace.index + 1),
-        ActiveWorkspaceLabel::Name => {
-            if workspace.name.is_empty() {
-                format!("{}", workspace.index + 1)
-            } else {
-                workspace.name.clone()
-            }
-        }
-    };
-
-    match (settings.mode, settings.display_style) {
-        (MenuBarDisplayMode::All, WorkspaceDisplayStyle::Layout) => {
-            let visible_workspaces = if settings.show_empty {
-                workspaces.to_vec()
-            } else {
-                workspaces
-                    .iter()
-                    .filter(|workspace| workspace.window_count > 0 || workspace.is_active)
-                    .cloned()
-                    .collect::<Vec<_>>()
-            };
-
-            visible_workspaces
-                .into_iter()
-                .map(|workspace| WorkspaceRenderInput {
-                    workspace,
-                    label: String::new(),
-                    show_windows: true,
-                })
-                .collect()
-        }
-        (MenuBarDisplayMode::All, WorkspaceDisplayStyle::Label) => workspaces
-            .iter()
-            .filter(|workspace| {
-                settings.show_empty || workspace.window_count > 0 || workspace.is_active
-            })
-            .map(|workspace| WorkspaceRenderInput {
-                workspace: workspace_without_windows(workspace),
-                label: label_for(workspace),
-                show_windows: false,
-            })
-            .collect(),
-        (MenuBarDisplayMode::Active, WorkspaceDisplayStyle::Layout) => workspaces
-            .iter()
-            .find(|workspace| workspace.is_active)
-            .cloned()
-            .map(|workspace| {
-                vec![WorkspaceRenderInput {
-                    workspace,
-                    label: String::new(),
-                    show_windows: true,
-                }]
-            })
-            .unwrap_or_default(),
-        (MenuBarDisplayMode::Active, WorkspaceDisplayStyle::Label) => workspaces
-            .iter()
-            .find(|workspace| workspace.is_active)
-            .map(|workspace| {
-                vec![WorkspaceRenderInput {
-                    workspace: workspace_without_windows(workspace),
-                    label: label_for(workspace),
-                    show_windows: false,
-                }]
-            })
-            .unwrap_or_default(),
-    }
-}
-
-fn workspace_without_windows(workspace: &WorkspaceData) -> WorkspaceData {
-    let mut workspace = workspace.clone();
-    workspace.windows.clear();
-    workspace.window_count = 0;
-    workspace
 }
 
 fn layout_title(mode: LayoutMode) -> &'static str {
