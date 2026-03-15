@@ -1102,6 +1102,20 @@ mod tests {
     }
 
     #[test]
+    fn it_preserves_natural_order_when_workspace_order_is_not_set() {
+        let workspaces = vec![
+            workspace(0, "main"),
+            workspace(1, "dev"),
+            workspace(2, "chat"),
+        ];
+
+        let ordered = order_workspaces_for_menu_bar(&workspaces, &[]);
+
+        let indices = ordered.iter().map(|ws| ws.index).collect::<Vec<_>>();
+        assert_eq!(indices, vec![0, 1, 2]);
+    }
+
+    #[test]
     fn it_orders_selected_workspaces_before_remaining_workspaces() {
         let workspaces = vec![
             workspace(0, "main"),
