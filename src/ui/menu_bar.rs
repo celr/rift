@@ -1,5 +1,4 @@
 // many ideas for how this works were taken from https://github.com/xiamaz/YabaiIndicator
-use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
@@ -144,7 +143,7 @@ impl MenuIcon {
         let render_inputs = match (mode, style) {
             (MenuBarDisplayMode::All, WorkspaceDisplayStyle::Layout) => {
                 let filtered = if settings.show_empty {
-                    ordered_workspaces.to_vec()
+                    ordered_workspaces
                 } else {
                     ordered_workspaces
                         .iter()
@@ -304,12 +303,12 @@ fn parse_layout_mode(layout_mode: &str) -> Option<LayoutMode> {
     }
 }
 
-fn order_workspaces_for_menu_bar<'a>(
-    workspaces: &'a [WorkspaceData],
+fn order_workspaces_for_menu_bar(
+    workspaces: &[WorkspaceData],
     workspace_selectors: &[WorkspaceSelector],
-) -> Cow<'a, [WorkspaceData]> {
+) -> Vec<WorkspaceData> {
     if workspace_selectors.is_empty() {
-        return Cow::Borrowed(workspaces);
+        return workspaces.to_vec();
     }
 
     let mut ordered = Vec::with_capacity(workspaces.len());
@@ -339,7 +338,7 @@ fn order_workspaces_for_menu_bar<'a>(
         }
     }
 
-    Cow::Owned(ordered)
+    ordered
 }
 
 fn layout_title(mode: LayoutMode) -> &'static str {
