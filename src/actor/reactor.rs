@@ -143,8 +143,6 @@ pub enum Event {
     ApplicationTerminated(pid_t),
     ApplicationThreadTerminated(pid_t),
     ApplicationActivated(pid_t, Quiet),
-    #[serde(skip)]
-    ApplicationActivatedDeferred { pid: pid_t, generation: u64 },
     ApplicationDeactivated(pid_t),
     ApplicationGloballyActivated(pid_t),
     ApplicationGloballyDeactivated(pid_t),
@@ -845,7 +843,6 @@ impl Reactor {
                 | Event::ApplicationTerminated(..)
                 | Event::ApplicationThreadTerminated(..)
                 | Event::ApplicationActivated(..)
-                | Event::ApplicationActivatedDeferred { .. }
                 | Event::ApplicationDeactivated(..)
                 | Event::ApplicationGloballyActivated(..)
                 | Event::ApplicationGloballyDeactivated(..)
@@ -965,13 +962,6 @@ impl Reactor {
             Event::ApplicationActivated(pid, quiet) => {
                 self.clear_menu_state_for_non_owner(pid);
                 AppEventHandler::handle_application_activated(self, pid, quiet);
-            }
-            Event::ApplicationActivatedDeferred { pid, generation } => {
-                if self.app_manager.activation_generation_matches(pid, generation) {
-                    self.handle_app_activation_workspace_switch(pid);
-                } else {
-                    trace!(pid, generation, "Skipping stale deferred app activation check");
-                }
             }
             Event::ApplicationDeactivated(pid) => {
                 self.clear_menu_state_for_pid(pid);
@@ -2028,23 +2018,6 @@ impl Reactor {
                 Some(app_info.clone()),
             ));
         }
-    }
-
-    fn schedule_app_activation_workspace_switch(&mut self, pid: pid_t) {
-        const APP_ACTIVATION_SWITCH_DELAY_MS: u64 = 150;
-
-        let generation = self.app_manager.next_activation_generation(pid);
-
-        let Some(events_tx) = self.communication_manager.events_tx.clone() else {
-            // In tests there is no reactor event sender; run synchronously.
-            self.handle_app_activation_workspace_switch(pid);
-            return;
-        };
-
-        thread::spawn(move || {
-            thread::sleep(Duration::from_millis(APP_ACTIVATION_SWITCH_DELAY_MS));
-            events_tx.send(Event::ApplicationActivatedDeferred { pid, generation });
-        });
     }
 
     fn handle_app_activation_workspace_switch(&mut self, pid: pid_t) {

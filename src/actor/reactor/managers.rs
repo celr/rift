@@ -33,7 +33,6 @@ pub struct WindowManager {
 pub struct AppManager {
     pub apps: HashMap<pid_t, AppState>,
     pub app_rules_recent_targets: HashMap<crate::sys::window_server::WindowServerId, Instant>,
-    pub app_activation_generation: HashMap<pid_t, u64>,
 }
 
 impl AppManager {
@@ -41,7 +40,6 @@ impl AppManager {
         AppManager {
             apps: HashMap::default(),
             app_rules_recent_targets: HashMap::default(),
-            app_activation_generation: HashMap::default(),
         }
     }
 
@@ -75,39 +73,6 @@ impl AppManager {
         for k in to_remove {
             self.app_rules_recent_targets.remove(&k);
         }
-    }
-
-    pub fn next_activation_generation(&mut self, pid: pid_t) -> u64 {
-        let generation = self.app_activation_generation.entry(pid).or_insert(0);
-        *generation = generation.saturating_add(1);
-        *generation
-    }
-
-    pub fn activation_generation_matches(&self, pid: pid_t, generation: u64) -> bool {
-        self.app_activation_generation.get(&pid).copied() == Some(generation)
-    }
-}
-
-#[cfg(test)]
-mod app_manager_tests {
-    use super::AppManager;
-
-    #[test]
-    fn activation_generation_increments_per_pid_and_rejects_stale_values() {
-        let mut manager = AppManager::new();
-
-        let pid = 42;
-        let first = manager.next_activation_generation(pid);
-        let second = manager.next_activation_generation(pid);
-        let other = manager.next_activation_generation(99);
-
-        assert_eq!(first, 1);
-        assert_eq!(second, 2);
-        assert_eq!(other, 1);
-
-        assert!(!manager.activation_generation_matches(pid, first));
-        assert!(manager.activation_generation_matches(pid, second));
-        assert!(manager.activation_generation_matches(99, other));
     }
 }
 
